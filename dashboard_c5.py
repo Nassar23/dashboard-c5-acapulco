@@ -22,18 +22,40 @@ def get_drive_service():
 @st.cache_data(ttl=300)
 def listar_archivos_drive():
     """Listar todos los archivos Excel en la carpeta de Drive"""
-    service = get_drive_service()
-    folder_id = st.secrets["folder_id"]
-    
-    query = f"'{folder_id}' in parents and (mimeType='application/vnd.ms-excel' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and trashed=false"
-    
-    results = service.files().list(
-        q=query,
-        fields="files(id, name, createdTime, modifiedTime)",
-        orderBy='createdTime desc'
-    ).execute()
-    
-    return results.get('files', [])
+    try:
+        service = get_drive_service()
+        folder_id = st.secrets["folder_id"]
+        
+        # Debug
+        st.sidebar.info(f"🔍 Carpeta ID: {folder_id}")
+        
+        query = f"'{folder_id}' in parents and (mimeType='application/vnd.ms-excel' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and trashed=false"
+        
+        results = service.files().list(
+            q=query,
+            fields="files(id, name, createdTime, modifiedTime, mimeType)",
+            orderBy='createdTime desc'
+        ).execute()
+        
+        archivos = results.get('files', [])
+        
+        # Debug
+        st.sidebar.success(f"✅ Archivos encontrados: {len(archivos)}")
+        
+        if archivos:
+            st.sidebar.write("**Primeros 5 archivos:**")
+            for i, arch in enumerate(archivos[:5]):
+                st.sidebar.text(f"{i+1}. {arch['name']}")
+        else:
+            st.sidebar.warning("⚠️ No se encontraron archivos con los criterios de búsqueda")
+        
+        return archivos
+        
+    except Exception as e:
+        st.sidebar.error(f"❌ Error: {str(e)}")
+        import traceback
+        st.sidebar.code(traceback.format_exc())
+        return []
 
 @st.cache_data(ttl=300)
 def descargar_archivo_drive(file_id):
@@ -86,23 +108,31 @@ def cargar_catalogo_fallas():
     
     return None
 
-@st.cache_data(ttl=300)
+@@st.cache_data(ttl=300)
 def cargar_datos():
     """Cargar datos desde Google Drive"""
     archivos = listar_archivos_drive()
     
+    # Debug
+    st.sidebar.info(f"📂 Procesando {len(archivos)} archivos...")
+    
     if not archivos:
+        st.sidebar.warning("⚠️ Lista de archivos vacía")
         return None, [], []
     
     dataframes = []
     archivos_info = []
     errores = []
     
-    for archivo in archivos:
-        nombre_archivo = archivo['name']
-        
-        if '(' in nombre_archivo:
-            continue
+   for archivo in archivos:
+    nombre_archivo = archivo['name']
+    
+    # Debug
+    st.sidebar.text(f"📄 Procesando: {nombre_archivo}")
+    
+    # Comentar o eliminar esta validación
+    # if '(' in nombre_archivo:
+    #     continue
             
         try:
             file_data = descargar_archivo_drive(archivo['id'])
