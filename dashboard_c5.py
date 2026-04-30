@@ -108,7 +108,7 @@ def cargar_catalogo_fallas():
     
     return None
 
-@@st.cache_data(ttl=300)
+@st.cache_data(ttl=300)
 def cargar_datos():
     """Cargar datos desde Google Drive"""
     archivos = listar_archivos_drive()
