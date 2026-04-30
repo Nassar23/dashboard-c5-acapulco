@@ -124,16 +124,12 @@ def cargar_datos():
     archivos_info = []
     errores = []
     
-   for archivo in archivos:
-    nombre_archivo = archivo['name']
-    
-    # Debug
-    st.sidebar.text(f"📄 Procesando: {nombre_archivo}")
-    
-    # Comentar o eliminar esta validación
-    # if '(' in nombre_archivo:
-    #     continue
-            
+    for archivo in archivos:
+        nombre_archivo = archivo['name']
+        
+        # Debug
+        st.sidebar.text(f"📄 Procesando: {nombre_archivo}")
+        
         try:
             file_data = descargar_archivo_drive(archivo['id'])
             df = pd.read_excel(file_data, sheet_name='BARRIDO_ACTIVO', engine='openpyxl', header=3)
@@ -148,7 +144,7 @@ def cargar_datos():
             
             try:
                 partes = nombre_archivo.split('_')
-                fecha_parte = partes[-1].replace('.xlsm', '').replace('.xlsx', '')
+                fecha_parte = partes[-1].replace('.xlsm', '').replace('.xlsx', '').replace('.xls', '')
                 
                 if len(fecha_parte) == 6 and fecha_parte.isdigit():
                     dia = fecha_parte[0:2]
