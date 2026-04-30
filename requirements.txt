@@ -1,8 +1,8 @@
-streamlit==1.32.0
-pandas==2.2.0
-openpyxl==3.1.2
-plotly==5.19.0
-google-api-python-client==2.119.0
-google-auth==2.27.0
-google-auth-oauthlib==1.2.0
-google-auth-httplib2==0.2.0
+streamlit>=1.39.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+plotly>=5.18.0
+google-api-python-client>=2.100.0
+google-auth>=2.20.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
