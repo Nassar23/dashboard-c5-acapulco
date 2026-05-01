@@ -27,9 +27,7 @@ def listar_archivos_drive():
         service = get_drive_service()
         folder_id = st.secrets["folder_id"]
         
-        st.sidebar.info(f"🔍 Carpeta ID: {folder_id}")
-        
-        # Buscar TODOS los archivos (sin filtro de tipo)
+        # Buscar TODOS los archivos
         query = f"'{folder_id}' in parents and trashed=false"
         
         results = service.files().list(
@@ -40,30 +38,13 @@ def listar_archivos_drive():
         
         archivos = results.get('files', [])
         
-        st.sidebar.success(f"✅ Total archivos: {len(archivos)}")
-        
         # Filtrar solo Excel
         archivos_excel = [a for a in archivos if a['name'].endswith(('.xlsx', '.xlsm', '.xls'))]
-        
-        st.sidebar.info(f"📊 Archivos Excel: {len(archivos_excel)}")
-        
-        if archivos_excel:
-            st.sidebar.write("**Primeros 5 archivos:**")
-            for i, arch in enumerate(archivos_excel[:5]):
-                st.sidebar.text(f"{i+1}. {arch['name']}")
-        else:
-            st.sidebar.warning("⚠️ No hay archivos Excel")
-            if archivos:
-                st.sidebar.write("**Archivos encontrados (otros tipos):**")
-                for i, arch in enumerate(archivos[:5]):
-                    st.sidebar.text(f"{i+1}. {arch['name']} ({arch.get('mimeType', 'unknown')})")
         
         return archivos_excel
         
     except Exception as e:
-        st.sidebar.error(f"❌ Error: {str(e)}")
-        import traceback
-        st.sidebar.code(traceback.format_exc())
+        st.error(f"❌ Error al listar archivos: {str(e)}")
         return []
 
 def descargar_archivo_drive(file_id):
@@ -85,11 +66,7 @@ def cargar_datos():
     """Cargar datos desde Google Drive"""
     archivos = listar_archivos_drive()
     
-    # Debug
-    st.sidebar.info(f"📂 Procesando {len(archivos)} archivos...")
-    
     if not archivos:
-        st.sidebar.warning("⚠️ Lista de archivos vacía")
         return None, [], []
     
     dataframes = []
@@ -99,21 +76,44 @@ def cargar_datos():
     for archivo in archivos:
         nombre_archivo = archivo['name']
         
-        # Debug
-        st.sidebar.text(f"📄 Procesando: {nombre_archivo}")
-        
         try:
             file_data = descargar_archivo_drive(archivo['id'])
             df = pd.read_excel(file_data, sheet_name='BARRIDO_ACTIVO', engine='openpyxl', header=3)
-            df.columns = df.columns.str.strip().str.replace('\n', ' ')
             
-            if 'ID CÁMARA' not in df.columns:
-                errores.append(f"{nombre_archivo}: Sin columna ID CÁMARA")
+            # Limpiar nombres de columnas
+            df.columns = df.columns.str.strip().str.replace('\n', ' ').str.upper()
+            
+            # Buscar columna de ID (puede tener diferentes nombres)
+            col_id = None
+            for col in df.columns:
+                if 'CÁMARA' in col or 'CAMARA' in col or 'ID' in col:
+                    col_id = col
+                    break
+            
+            if col_id is None:
+                errores.append(f"{nombre_archivo}: No se encontró columna de ID de cámara")
                 continue
             
-            df = df.dropna(subset=['ID CÁMARA'])
-            df = df[df['ID CÁMARA'].astype(str).str.strip() != '']
+            # Renombrar columna para estandarizar
+            df.rename(columns={col_id: 'ID_CAMARA'}, inplace=True)
             
+            # Buscar columna de ESTADO
+            col_estado = None
+            for col in df.columns:
+                if 'ESTADO' in col:
+                    col_estado = col
+                    break
+            
+            if col_estado:
+                df.rename(columns={col_estado: 'ESTADO'}, inplace=True)
+            else:
+                df['ESTADO'] = 'DESCONOCIDO'
+            
+            # Limpiar datos
+            df = df.dropna(subset=['ID_CAMARA'])
+            df = df[df['ID_CAMARA'].astype(str).str.strip() != '']
+            
+            # Extraer fecha del nombre del archivo
             try:
                 partes = nombre_archivo.split('_')
                 fecha_parte = partes[-1].replace('.xlsm', '').replace('.xlsx', '').replace('.xls', '')
@@ -122,6 +122,12 @@ def cargar_datos():
                     dia = fecha_parte[0:2]
                     mes = fecha_parte[2:4]
                     anio = '20' + fecha_parte[4:6]
+                    fecha_dt = pd.to_datetime(f"{anio}-{mes}-{dia}")
+                    fecha_str = fecha_dt.strftime('%d/%m/%Y')
+                elif len(fecha_parte) == 8 and fecha_parte.isdigit():
+                    dia = fecha_parte[0:2]
+                    mes = fecha_parte[2:4]
+                    anio = fecha_parte[4:8]
                     fecha_dt = pd.to_datetime(f"{anio}-{mes}-{dia}")
                     fecha_str = fecha_dt.strftime('%d/%m/%Y')
                 else:
@@ -180,18 +186,18 @@ def crear_grafico_tendencia(df):
 
 def crear_diagrama_gantt(df):
     """Crear diagrama de Gantt para visualizar disponibilidad de cámaras"""
-    if 'ID CÁMARA' not in df.columns or 'fecha_barrido' not in df.columns:
+    if 'ID_CAMARA' not in df.columns or 'fecha_barrido' not in df.columns:
         return None
     
-    df_gantt = df[['ID CÁMARA', 'fecha_barrido', 'ESTADO']].copy()
-    df_gantt = df_gantt.sort_values(['ID CÁMARA', 'fecha_barrido'])
+    df_gantt = df[['ID_CAMARA', 'fecha_barrido', 'ESTADO']].copy()
+    df_gantt = df_gantt.sort_values(['ID_CAMARA', 'fecha_barrido'])
     
-    # Limitar a las primeras 50 cámaras para mejor visualización
-    camaras_top = df_gantt['ID CÁMARA'].unique()[:50]
-    df_gantt = df_gantt[df_gantt['ID CÁMARA'].isin(camaras_top)]
+    # Limitar a las primeras 50 cámaras
+    camaras_top = df_gantt['ID_CAMARA'].unique()[:50]
+    df_gantt = df_gantt[df_gantt['ID_CAMARA'].isin(camaras_top)]
     
     fig = px.timeline(df_gantt, x_start='fecha_barrido', x_end='fecha_barrido',
-                      y='ID CÁMARA', color='ESTADO',
+                      y='ID_CAMARA', color='ESTADO',
                       title='Historial de Estado por Cámara (Top 50)',
                       color_discrete_map={'OPERANDO': '#00CC96', 'FUERA DE SERVICIO': '#EF553B'})
     
@@ -215,24 +221,43 @@ with st.sidebar:
 df, archivos_info, errores = cargar_datos()
 
 if df is not None and len(df) > 0:
+    
+    # Mostrar columnas detectadas (debug)
+    with st.expander("🔍 Columnas detectadas en los datos"):
+        st.write(list(df.columns))
+    
     # Métricas principales
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("📹 Total Cámaras", len(df['ID CÁMARA'].unique()))
+        total_camaras = len(df['ID_CAMARA'].unique())
+        st.metric("📹 Total Cámaras", total_camaras)
     
     with col2:
-        operando = len(df[df['ESTADO'] == 'OPERANDO'])
-        st.metric("✅ Operando", operando)
+        if 'ESTADO' in df.columns:
+            operando = len(df[df['ESTADO'].str.contains('OPERANDO', case=False, na=False)])
+            st.metric("✅ Operando", operando)
+        else:
+            st.metric("✅ Operando", "N/A")
     
     with col3:
-        fuera = len(df[df['ESTADO'] == 'FUERA DE SERVICIO'])
-        st.metric("❌ Fuera de Servicio", fuera)
+        if 'ESTADO' in df.columns:
+            fuera = len(df[df['ESTADO'].str.contains('FUERA', case=False, na=False)])
+            st.metric("❌ Fuera de Servicio", fuera)
+        else:
+            st.metric("❌ Fuera de Servicio", "N/A")
     
     with col4:
-        if operando + fuera > 0:
-            disponibilidad = (operando / (operando + fuera)) * 100
-            st.metric("📊 Disponibilidad", f"{disponibilidad:.1f}%")
+        if 'ESTADO' in df.columns:
+            operando = len(df[df['ESTADO'].str.contains('OPERANDO', case=False, na=False)])
+            fuera = len(df[df['ESTADO'].str.contains('FUERA', case=False, na=False)])
+            if operando + fuera > 0:
+                disponibilidad = (operando / (operando + fuera)) * 100
+                st.metric("📊 Disponibilidad", f"{disponibilidad:.1f}%")
+            else:
+                st.metric("📊 Disponibilidad", "N/A")
+        else:
+            st.metric("📊 Disponibilidad", "N/A")
     
     # Gráficos
     st.markdown("---")
@@ -259,9 +284,13 @@ if df is not None and len(df) > 0:
     st.markdown("---")
     st.subheader("📋 Datos Detallados")
     
-    if 'ID CÁMARA' in df.columns:
-        df_display = df[['ID CÁMARA', 'ESTADO', 'fecha_str', 'archivo_origen']].copy()
-        df_display.columns = ['Cámara', 'Estado', 'Fecha', 'Archivo']
+    columnas_mostrar = ['ID_CAMARA', 'ESTADO', 'fecha_str', 'archivo_origen']
+    columnas_disponibles = [col for col in columnas_mostrar if col in df.columns]
+    
+    if columnas_disponibles:
+        df_display = df[columnas_disponibles].copy()
+        nombres_columnas = {'ID_CAMARA': 'Cámara', 'ESTADO': 'Estado', 'fecha_str': 'Fecha', 'archivo_origen': 'Archivo'}
+        df_display.columns = [nombres_columnas.get(col, col) for col in df_display.columns]
         st.dataframe(df_display, use_container_width=True, height=400)
     
     # Información de archivos procesados
