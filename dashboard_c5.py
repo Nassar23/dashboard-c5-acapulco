@@ -87,7 +87,16 @@ def listar_archivos_drive():
         # Saltar duplicados con paréntesis y archivos temporales
         excels = [a for a in excels if '(' not in a['name'] and not a['name'].startswith('~$')]
         
-        catalogos = [a for a in excels if 'catalogo' in a['name'].lower() or 'catálogo' in a['name'].lower()]
+        # Detección flexible del catálogo: cualquier archivo cuyo nombre contenga
+        # 'catalogo', 'catálogo', 'pmi' o 'maestro' (case-insensitive)
+        # y que NO empiece con 'C5_Acapulco' (esos son barridos)
+        def es_catalogo(nombre):
+            n = nombre.lower()
+            if n.startswith('c5_acapulco'):
+                return False
+            return any(kw in n for kw in ['catalogo', 'catálogo', 'pmi', 'maestro'])
+        
+        catalogos = [a for a in excels if es_catalogo(a['name'])]
         barridos = [a for a in excels if a not in catalogos]
         return catalogos, barridos
     except Exception as e:
@@ -438,6 +447,37 @@ with st.spinner('Cargando catálogo PMI desde Google Drive...'):
 if df_universo is None:
     st.error("❌ No se encontró el catálogo PMI en la carpeta de Drive.")
     st.info("El catálogo debe llamarse: `Catalogo_PMI_Acapulco_DDMMAA.xlsx`")
+    
+    # Diagnóstico: mostrar qué archivos SÍ se ven en la carpeta
+    with st.expander("🔍 Diagnóstico — archivos detectados en Drive", expanded=True):
+        try:
+            cats_diag, barr_diag = listar_archivos_drive()
+            st.write(f"**Archivos catálogo detectados:** {len(cats_diag)}")
+            if cats_diag:
+                for a in cats_diag:
+                    st.text(f"   📚 {a['name']}")
+            else:
+                st.warning("   No se detectó ningún archivo cuyo nombre contenga 'catalogo' o 'catálogo'")
+            
+            st.write(f"**Archivos barrido detectados:** {len(barr_diag)}")
+            if barr_diag:
+                for a in barr_diag:
+                    st.text(f"   📋 {a['name']}")
+            else:
+                st.warning("   No se detectó ningún archivo de barrido")
+            
+            if not cats_diag and not barr_diag:
+                st.error("⚠️ No se ve NINGÚN archivo en la carpeta. Posibles causas:")
+                st.markdown("""
+                - La cuenta de servicio (`xxx@xxx.iam.gserviceaccount.com`) no tiene acceso a la carpeta. Verifica en Drive: clic derecho en la carpeta → Compartir → agregar el email de la cuenta de servicio como Lector.
+                - El `folder_id` en `secrets.toml` apunta a otra carpeta.
+                - La carpeta está vacía.
+                """)
+            elif not cats_diag and barr_diag:
+                st.warning("⚠️ Falta subir el catálogo PMI. Sube `Catalogo_PMI_Acapulco_270426.xlsx` a la misma carpeta donde están los barridos.")
+        except Exception as e:
+            st.error(f"Error al diagnosticar: {str(e)}")
+    
     st.stop()
 
 with st.spinner('Cargando barridos diarios...'):
